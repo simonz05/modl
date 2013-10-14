@@ -580,18 +580,30 @@ func hookedselect(m *DbMap, exec SqlExecutor, dest interface{}, query string, ar
 }
 
 func rawselect(m *DbMap, exec SqlExecutor, dest interface{}, query string, args ...interface{}) error {
-	// FIXME: we need to verify dest is a pointer-to-slice
+	t := reflect.TypeOf(dest)
 
-	// Run the query
-	sqlrows, err := exec.query(query, args...)
-	if err != nil {
-		return err
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	} else {
+		return fmt.Errorf("modl: select dest must be a pointer, but got: %t", dest)
 	}
 
-	defer sqlrows.Close()
-	err = sqlx.StructScan(sqlrows, dest)
-	return err
+	switch t.Kind() {
+	case reflect.Struct:
+		row := exec.queryRowx(query, args...)
+		return row.StructScan(dest)
+	case reflect.Slice:
+		sqlrows, err := exec.query(query, args...)
+		if err != nil {
+			return err
+		}
+		defer sqlrows.Close()
+		return sqlx.StructScan(sqlrows, dest)
+	default:
+		return fmt.Errorf("modl: select dest must be a pointer to a slice or struct, but got: %t", dest)
+	}
 
+	return nil
 }
 
 func get(m *DbMap, exec SqlExecutor, dest interface{}, keys ...interface{}) error {
