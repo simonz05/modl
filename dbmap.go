@@ -10,7 +10,6 @@ import (
 	"github.com/jmoiron/sqlx"
 	"log"
 	"reflect"
-	"strings"
 )
 
 // DbMap is the root modl mapping object. Create one of these for each
@@ -63,7 +62,7 @@ func (m *DbMap) TraceOff() {
 }
 
 // AddTable registers the given interface type with modl. The table name
-// will be given the name of the TypeOf(i), lowercased.
+// will be given the name of the TypeOf(i).
 //
 // This operation is idempotent. If i's type is already mapped, the
 // existing *TableMap is returned
@@ -75,7 +74,7 @@ func (m *DbMap) AddTable(i interface{}, name ...string) *TableMap {
 
 	t := reflect.TypeOf(i)
 	if len(Name) == 0 {
-		Name = strings.ToLower(t.Name())
+		Name = t.Name()
 	}
 
 	// check if we have a table for this type already
@@ -90,31 +89,40 @@ func (m *DbMap) AddTable(i interface{}, name ...string) *TableMap {
 
 	tmap := &TableMap{gotype: t, TableName: Name, dbmap: m}
 	tmap.setupHooks(i)
+	tmap.columns, tmap.version = readStructColumns(t) 
+	m.tables = append(m.tables, tmap)
+	return tmap
+}
 
+func readStructColumns(t reflect.Type) (cols []*ColumnMap, version *ColumnMap) {
 	n := t.NumField()
-	tmap.columns = make([]*ColumnMap, 0, n)
 	for i := 0; i < n; i++ {
 		f := t.Field(i)
-		columnName := f.Tag.Get("db")
-		if columnName == "" {
-			columnName = strings.ToLower(f.Name)
-		}
-
-		cm := &ColumnMap{
-			ColumnName: columnName,
-			Transient:  columnName == "-",
-			fieldName:  f.Name,
-			gotype:     f.Type,
-		}
-		tmap.columns = append(tmap.columns, cm)
-		if cm.fieldName == "Version" {
-			tmap.version = tmap.columns[len(tmap.columns)-1]
+		if f.Anonymous && f.Type.Kind() == reflect.Struct {
+			// Recursively add nested fields in embedded structs.
+			subcols, subversion := readStructColumns(f.Type)
+			cols = append(cols, subcols...)
+			if subversion != nil {
+				version = subversion
+			}
+		} else {
+			columnName := f.Tag.Get("db")
+			if columnName == "" {
+				columnName = f.Name
+			}
+			cm := &ColumnMap{
+				ColumnName: columnName,
+				Transient:  columnName == "-",
+				fieldName:  f.Name,
+				gotype:     f.Type,
+			}
+			cols = append(cols, cm)
+			if cm.fieldName == "Version" {
+				version = cm
+			}
 		}
 	}
-	m.tables = append(m.tables, tmap)
-
-	return tmap
-
+	return
 }
 
 func (m *DbMap) AddTableWithName(i interface{}, name string) *TableMap {
@@ -364,6 +372,7 @@ start:
 // Returns any matching tables for the type t or nil if not found
 func (m *DbMap) TableForType(t reflect.Type) *TableMap {
 	for _, table := range m.tables {
+		fmt.Println(table.gotype, t)
 		if table.gotype == t {
 			return table
 		}
