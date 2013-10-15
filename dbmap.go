@@ -372,7 +372,6 @@ start:
 // Returns any matching tables for the type t or nil if not found
 func (m *DbMap) TableForType(t reflect.Type) *TableMap {
 	for _, table := range m.tables {
-		fmt.Println(table.gotype, t)
 		if table.gotype == t {
 			return table
 		}

@@ -64,6 +64,7 @@ type TableMap struct {
 	TableName  string
 	gotype     reflect.Type
 	columns    []*ColumnMap
+	columnsStr string
 	keys       []*ColumnMap
 	version    *ColumnMap
 	insertPlan bindPlan
@@ -389,6 +390,30 @@ func (t *TableMap) bindGet() bindPlan {
 	}
 
 	return plan
+}
+
+func (t *TableMap) ColumnsStr() string {
+	t.setColumnsStr()
+	return t.columnsStr
+}
+
+func (t *TableMap) setColumnsStr() {
+	if t.columnsStr == "" {
+		s := bytes.Buffer{}
+		x := 0
+		for _, col := range t.columns {
+			if !col.Transient {
+				if x > 0 {
+					s.WriteString(",")
+				}
+				s.WriteString(t.dbmap.Dialect.QuoteField(t.TableName))
+				s.WriteString(".")
+				s.WriteString(t.dbmap.Dialect.QuoteField(col.ColumnName))
+				x++
+			}
+		}
+		t.columnsStr = s.String()
+	}
 }
 
 // ColumnMap represents a mapping between a Go struct field and a single
